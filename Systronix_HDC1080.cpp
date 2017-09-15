@@ -160,7 +160,7 @@ uint16_t Systronix_HDC1080::sensor_data_get (void)
 	uint8_t ret_val;
 	error.exists = true;					// so we can use config_write; we'll find out later if device does not exist
 
-	Serial.printf("HDC1080 Lib init %s at base 0x%.2X\r\n", _wire_name, _base);
+//	Serial.printf("HDC1080 Lib init %s at base 0x%.2X\r\n", _wire_name, _base);
 
 	ret_val = config_write (config);		// if successful this means we got two ACKs from slave device
 	if (SUCCESS != ret_val)
