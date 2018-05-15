@@ -165,7 +165,7 @@ uint16_t Systronix_HDC1080::sensor_data_get (void)
 	ret_val = config_write (config);		// if successful this means we got two ACKs from slave device
 	if (SUCCESS != ret_val)
 		{
-		Serial.printf("9557 lib init failed with %s (0x%.2X)\r\n", status_text[error.error_val], error.error_val);
+//		Serial.printf("9557 lib init failed with %s (0x%.2X)\r\n", status_text[error.error_val], error.error_val);
 		error.exists = false;			// only place error.exists is set false
 		return ABSENT;
 		}
@@ -203,82 +203,6 @@ uint32_t Systronix_HDC1080::reset_bus_count_read(void)
 	}
 
 
-//---------------------------< T A L L Y _ T R A N S A C T I O N >--------------------------------------------
-/**
-Here we tally errors.  This does not answer the what-to-do-in-the-event-of-these-errors question; it just
-counts them.
-
-TODO: we should decide if the correct thing to do when slave does not ack, or arbitration is lost, or
-timeout occurs, or auto reset fails (states 2, 5 and 4, 7 ??? state numbers may have changed since this
-comment originally added) is to declare these addresses as non-existent.
-
-We need to decide what to do when those conditions occur if we do not declare the device non-existent.
-When a device is declared non-existent, what do we do then? (this last is more a question for the
-application than this library).  The questions in this TODO apply equally to other i2c libraries that tally
-these errors.
-
-Don't set error.exists = false here! These errors are likely recoverable. bab & wsk 170612
-
-This is the only place we set error.error_val()
-
-TODO use i2c_t3 error or status enumeration here in the switch/case
-*/
-
-void Systronix_HDC1080::tally_transaction (uint8_t value)
-	{
-	if (value && (error.total_error_count < UINT64_MAX))
-		error.total_error_count++; 			// every time here incr total error count
-
-	error.error_val = value;
-
-	switch (value)
-		{
-		case SUCCESS:
-			if (error.successful_count < UINT64_MAX)
-				error.successful_count++;
-			break;
-		case 1:								// i2c_t3 and Wire: data too long from endTransmission() (rx/tx buffers are 259 bytes - slave addr + 2 cmd bytes + 256 data)
-			error.data_len_error_count++;
-			break;
-#if defined I2C_T3_H
-		case I2C_TIMEOUT:
-			error.timeout_count++;			// 4 from i2c_t3; timeout from call to status() (read)
-#else
-		case 4:
-			error.other_error_count++;		// i2c_t3 and Wire: from endTransmission() "other error"
-#endif
-			break;
-		case 2:								// i2c_t3 and Wire: from endTransmission()
-		case I2C_ADDR_NAK:					// 5 from i2c_t3
-			error.rcv_addr_nack_count++;
-			break;
-		case 3:								// i2c_t3 and Wire: from endTransmission()
-		case I2C_DATA_NAK:					// 6 from i2c_t3
-			error.rcv_data_nack_count++;
-			break;
-		case I2C_ARB_LOST:					// 7 from i2c_t3; arbitration lost from call to status() (read)
-			error.arbitration_lost_count++;
-			break;
-		case I2C_BUF_OVF:
-			error.buffer_overflow_count++;
-			break;
-		case I2C_SLAVE_TX:
-		case I2C_SLAVE_RX:
-			error.other_error_count++;		// 9 & 10 from i2c_t3; these are not errors, I think
-			break;
-		case WR_INCOMPLETE:					// 11; Wire.write failed to write all of the data to tx_buffer
-			error.incomplete_write_count++;
-			break;
-		case SILLY_PROGRAMMER:				// 12
-			error.silly_programmer_error++;
-			break;
-		default:
-			error.unknown_error_count++;
-			break;
-		}
-	}
-
-
 //---------------------------< P O I N T E R _ W R I T E >----------------------------------------------------
 //
 // Write to the pointer register. This is the register accessed after the HDC1080 receives a valid slave
@@ -311,26 +235,26 @@ uint8_t Systronix_HDC1080::pointer_write (uint8_t target_register)
 		return ABSENT;
 
 	if ((target_register > HDC1080_CONFIG_REG) && (target_register < HDC1080_ID_43_REG))
-		tally_transaction(SILLY_PROGRAMMER);	// target_register does not specify a valid register
+		i2c_common.tally_transaction(SILLY_PROGRAMMER, &error);	// target_register does not specify a valid register
 
 	_wire.beginTransmission (_base);
 	ret_val = _wire.write (target_register);	// returns # of bytes written to i2c_t3 buffer
 	if (1 != ret_val)
 		{
-		tally_transaction (WR_INCOMPLETE);		// increment the appropriate counter
+		i2c_common.tally_transaction (WR_INCOMPLETE, &error);		// increment the appropriate counter
 		return FAIL;							// calling function decides what to do with the error
 		}
 
 	ret_val = _wire.endTransmission ();			// endTransmission() returns 0 if successful
   	if (SUCCESS != ret_val)
 		{
-		tally_transaction (ret_val);			// increment the appropriate counter
+		i2c_common.tally_transaction (ret_val, &error);			// increment the appropriate counter
 		return FAIL;							// calling function decides what to do with the error
 		}
 
 	_pointer_reg = target_register;				// remember where the pointer register is pointing
 
-	tally_transaction (SUCCESS);
+	i2c_common.tally_transaction (SUCCESS, &error);
 	return SUCCESS;
 	}
 
@@ -357,14 +281,14 @@ uint8_t Systronix_HDC1080::config_write (uint16_t data)
 	ret_val += _wire.write (_sensor_data.as_array, 2);	// and write the data to the tx_buffer
 	if (3 != ret_val)
 		{
-		tally_transaction (WR_INCOMPLETE);				// increment the appropriate counter
+		i2c_common.tally_transaction (WR_INCOMPLETE, &error);				// increment the appropriate counter
 		return FAIL;									// calling function decides what to do with the error
 		}
 
 	ret_val = _wire.endTransmission();
   	if (SUCCESS != ret_val)
 		{
-		tally_transaction (ret_val);					// increment the appropriate counter
+		i2c_common.tally_transaction (ret_val, &error);					// increment the appropriate counter
 		return FAIL;									// calling function decides what to do with the error
 		}
 
@@ -372,7 +296,7 @@ uint8_t Systronix_HDC1080::config_write (uint16_t data)
 
 	_config_reg = data;									// remember how we have set the configuration register
 
-	tally_transaction (SUCCESS);
+	i2c_common.tally_transaction (SUCCESS, &error);
 	return SUCCESS;
 	}
 
@@ -441,7 +365,7 @@ uint8_t Systronix_HDC1080::default_read (uint16_t* data_ptr, uint16_t* h_data_pt
 			read_len = sizeof (uint16_t) << 1;			// read both measurements in one operation
 		else											// forgot to set h_data_ptr?
 			{
-			tally_transaction (SILLY_PROGRAMMER);
+			i2c_common.tally_transaction (SILLY_PROGRAMMER, &error);
 			return FAIL;
 			}
 		}
@@ -451,7 +375,7 @@ uint8_t Systronix_HDC1080::default_read (uint16_t* data_ptr, uint16_t* h_data_pt
 	if (read_len != _wire.requestFrom (_base, read_len, I2C_STOP))
 		{
 		ret_val = _wire.status();						// to get error value
-		tally_transaction (ret_val);					// increment the appropriate counter
+		i2c_common.tally_transaction (ret_val, &error);					// increment the appropriate counter
 		return FAIL;
 		}
 
@@ -479,7 +403,7 @@ uint8_t Systronix_HDC1080::default_read (uint16_t* data_ptr, uint16_t* h_data_pt
 	else if (HDC1080_CONFIG_REG == _pointer_reg)
 		_config_reg = *data_ptr;
 
-	tally_transaction (SUCCESS);
+	i2c_common.tally_transaction (SUCCESS, &error);
 	return SUCCESS;
 	}
 

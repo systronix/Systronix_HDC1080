@@ -14,27 +14,15 @@
 //---------------------------< I N C L U D E S >--------------------------------------------------------------
 
 #include <Arduino.h>
-
-// Include the lowest level I2C library
-#if defined (__MK20DX256__) || defined (__MK20DX128__) 	// Teensy 3.1 or 3.2 || Teensy 3.0
-#include <i2c_t3.h>
-#else
-#include <Wire.h>	// for AVR I2C library
-#endif
+#include <Systronix_i2c_common.h>
 
 
 //---------------------------< D E F I N E S >----------------------------------------------------------------
 
-#define		SUCCESS				0
-#define		FAIL				(~SUCCESS)
-#define		ABSENT				0xFD
 #define		WAIT				0xFC		// get_t_h_data () caused a trigger so no data available to get until measurement cycle complete
 #define		FAULT				0xFB		// MODE bit wrong for get_t_h_data()
 
 #define		HDC1080_BASE	 	0x40		// 7-bit address not including R/W bit
-
-#define		WR_INCOMPLETE		11
-#define		SILLY_PROGRAMMER	12
 
 
 //----------< P O I N T E R   R E G I S T E R >----------
@@ -135,7 +123,7 @@ class Systronix_HDC1080
 		we can't tell the difference between SUCCESS and I2C_WAITING
 		Since requestFrom is blocking, only "I2C message is over" status can occur.
 		In Writing, with endTransmission, it is blocking, so only end of message errors can exist.
-		*/
+		*//*
 #if defined I2C_T3_H
 		const char * const status_text[13] =
 		{
@@ -165,7 +153,7 @@ class Systronix_HDC1080
 			"Other error"
 		};
 #endif
-
+*/
 		struct data_t
 			{
 			uint16_t	raw_temp;				// most recent
@@ -180,10 +168,6 @@ class Systronix_HDC1080
 			bool		fresh;					// data is good and fresh TODO: how does one know that the data are not 'fresh'?
 			} data;
 
-
-
-
-
 		/** error stucture
 		Note that this can be written by a library user, so it could be cleared if desired as part of
 		some error recovery or logging operation. It could also be inadvertenly erased...
@@ -191,25 +175,8 @@ class Systronix_HDC1080
 		successful_count overflowed at 258.5 hours. Making this a 64-bit unsigned (long long) allows
 		for 2**32 times as many hours. So not likely to ever wrap wrap.
 		*/
-		struct
-			{
-			boolean		exists;							// set false after an unsuccessful i2c transaction
-			uint8_t		error_val;						// the most recent error value, not just SUCCESS or FAIL
-			uint32_t	incomplete_write_count;			// Wire.write failed to write all of the data to tx_buffer
-			uint32_t	data_len_error_count;			// data too long
-			uint32_t	timeout_count;					// slave response took too long
-			uint32_t	rcv_addr_nack_count;			// slave did not ack address
-			uint32_t	rcv_data_nack_count;			// slave did not ack data
-			uint32_t	arbitration_lost_count;
-			uint32_t	buffer_overflow_count;
-			uint32_t	other_error_count;				// from endTransmission there is "other" error
-			uint32_t	unknown_error_count;
-			uint32_t	data_value_error_count;			// I2C message OK but value read was wrong; how can this be?
-			uint32_t	silly_programmer_error;			// I2C address to big or something else that "should never happen"
-			uint64_t	total_error_count;				// quick check to see if any have happened
-			uint64_t	successful_count;				// successful access cycle
-			} error;
 
+		error_t		error;								// error struct typdefed in Systronix_i2c_common.h
 
 		char*		wire_name;							// name of Wire, Wire1, etc in use
 
@@ -225,13 +192,13 @@ class Systronix_HDC1080
 
 		uint8_t		pointer_write (uint8_t target_register);
 		uint8_t		config_write (uint16_t data);
-		
+
 		uint8_t 	register_read (uint8_t target_register, uint16_t* data_ptr);
 		uint8_t		default_read (uint16_t* data_ptr, uint16_t* h_data_ptr = NULL);
 		uint8_t		base_get(void);
 		void		sensor_data_set (uint16_t data);
 		uint16_t	sensor_data_get (void);
-		
+
 		float		raw14_to_rh (uint16_t raw14);
 		float		raw14_to_c (uint16_t raw14);
 		float		raw14_to_f (uint16_t raw14);
